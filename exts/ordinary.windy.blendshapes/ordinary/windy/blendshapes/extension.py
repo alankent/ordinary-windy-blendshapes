@@ -52,22 +52,44 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
         skeleton.CreateJointNamesAttr().Set([])
 
         # Add a SkelAnimation referring to the blend shapes to simplify animation.
-        no_wind_anim = self.add_skel_animation(stage, skeleton, "noWindAnimation", 0, 0)
-        self.add_skel_animation(stage, skeleton, "eastWindAnimation", 1, 0)
-        self.add_skel_animation(stage, skeleton, "southWindAnimation", 0, 1)
+        no_wind_anim = self.add_skel_animation(stage, skeleton, "noWindAnimation", [0, 0, 0, 0])
+        self.add_skel_animation(stage, skeleton, "eastWindAnimation", [1, 0, 0, 0])
+        self.add_skel_animation(stage, skeleton, "westWindAnimation", [0, 1, 0, 0])
+        self.add_skel_animation(stage, skeleton, "southWindAnimation", [0, 0, 1, 0])
+        self.add_skel_animation(stage, skeleton, "northWindAnimation", [0, 0, 0, 1])
+        no_wind_anim = UsdSkel.Animation = self.add_skel_animation(stage, skeleton, "testWindAnimation", {
+                    0: [0, 0, 0, 0],
+                    10: [0.2, 0, 0.2, 0],
+                    25: [1, 0, 1, 0],
+                    40: [0.2, 0, 0.2, 0],
+                    50: [0, 0, 0, 0],
+                    60: [0, 0.2, 0, 0.2],
+                    75: [0, 1, 0, 1],
+                    90: [0, 0.2, 0, 0.2],
+                    100: [0, 0, 0, 0],
+                })
 
         # Point the skeleton to the no wind animation.
         skel_binding: UsdSkel.BindingAPI = UsdSkel.BindingAPI(skeleton)
         skel_binding.CreateAnimationSourceRel().SetTargets([no_wind_anim.GetPath()])
 
-    def add_skel_animation(self, stage: Usd.Stage, skeleton: UsdSkel.Skeleton, animation_name, east_weight, south_weight):
+    def add_skel_animation(self, stage: Usd.Stage, skeleton: UsdSkel.Skeleton, animation_name, weights):
+        print(animation_name)
+        print(skeleton.GetPath().name)
         skel_animation: UsdSkel.Animation = UsdSkel.Animation.Define(stage, skeleton.GetPath().AppendChild(animation_name))
-        skel_animation.CreateBlendShapesAttr().Set(["eastWindBlendShape", "southWindBlendShape"])
-        skel_animation.CreateBlendShapeWeightsAttr().Set([east_weight, south_weight])
+        skel_animation.CreateBlendShapesAttr().Set(["eastWindBlendShape", "westWindBlendShape", "southWindBlendShape", "northWindBlendShape"])
         skel_animation.CreateJointsAttr().Set([])
         skel_animation.CreateRotationsAttr().Set([])
         skel_animation.CreateScalesAttr().Set([])
         skel_animation.CreateTranslationsAttr().Set([])
+
+        if type(weights) is dict:
+            attr = skel_animation.CreateBlendShapeWeightsAttr()
+            for time, value in weights.items():
+                attr.Set(time=time, value=value)
+        else:
+            skel_animation.CreateBlendShapeWeightsAttr().Set(weights)
+
         return skel_animation
 
     def add_blend_shapes(self):
@@ -113,14 +135,16 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
 
         # Create child blend shapes for +X (east) and +Z (south)
         east_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "eastWindBlendShape", 1, 0)
+        west_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "westWindBlendShape", -1, 0)
         south_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "southWindBlendShape", 0, 1)
-        # TODO: Add a third blendshape for fluttering leaves
+        north_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "northWindBlendShape", 0, -1)
+        # TODO: Add a blend shape for fluttering leaves
 
         # Add skel:blendShapes property to list the blendshape names.
         # https://openusd.org/dev/api/class_usd_skel_binding_a_p_i.html
         binding: UsdSkel.BindingAPI = UsdSkel.BindingAPI(mesh)
-        binding.CreateBlendShapesAttr().Set(["eastWindBlendShape", "southWindBlendShape"])
-        binding.CreateBlendShapeTargetsRel().SetTargets([east_blend_shape.GetPath(), south_blend_shape.GetPath()])
+        binding.CreateBlendShapesAttr().Set(["eastWindBlendShape", "westWindBlendShape", "southWindBlendShape", "northWindBlendShape"])
+        binding.CreateBlendShapeTargetsRel().SetTargets([east_blend_shape.GetPath(), west_blend_shape.GetPath(), south_blend_shape.GetPath(), north_blend_shape.GetPath()])
         UsdSkel.BindingAPI.Apply(mesh.GetPrim())
 
         binding.CreateSkeletonRel().SetTargets([skeleton.GetPath()])
@@ -143,6 +167,8 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
         height = 0
         offsets = []
 
+        # TODO: I don't really like this - probably a smarter way to do it by computing a base vector
+        # then rotating it appropriately. But just get it going for now by duplicating the code.
         if up == "Y":
             for x, y, z in mesh_points:
                 if y > height:
@@ -152,8 +178,9 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
                 if y <= 0:
                     offsets.append((0, 0, 0))
                 else:
-                    delta = y # ((y / height) ** 2) * (height / 4)
-                    offsets.append((delta * east_scale, 0, delta * south_scale))
+                    horizontal_delta = self.compute_horizontal_delta(height, y)
+                    vertical_delta = self.compute_vertical_delta(height, y)
+                    offsets.append((horizontal_delta * east_scale, vertical_delta, horizontal_delta * south_scale))
 
         if up == "Z":
             for x, y, z in mesh_points:
@@ -164,8 +191,9 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
                 if z <= 0:
                     offsets.append((0, 0, 0))
                 else:
-                    delta = self.compute_delta(height, z)
-                    offsets.append((delta * east_scale, delta * south_scale, 0))
+                    horizontal_delta = self.compute_horizontal_delta(height, z)
+                    vertical_delta = self.compute_vertical_delta(height, z)
+                    offsets.append((horizontal_delta * east_scale, horizontal_delta * south_scale, vertical_delta))
 
         # Create the blendshape! https://openusd.org/dev/api/class_usd_skel_blend_shape.html
         blend_shape: UsdSkel.BlendShape = UsdSkel.BlendShape.Define(stage, mesh.GetPath().AppendChild(blend_shape_name))
@@ -175,6 +203,11 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
 
         return blend_shape
 
-    def compute_delta(self, max, value):
-        #return value
-        return ((value / max) ** 2) * (max / 4)
+    def compute_horizontal_delta(self, max, value):
+        # Scale to 0 to 1 fraction, square it for a curve, then scale to up to sway at most 1/4 height.
+        return ((value / max) ** 2) * max / 8
+    
+    def compute_vertical_delta(self, max, value):
+        # When leaning reduce the height a bit so it does not look like its stretching too much.
+        # TODO: Would have to do a few inbetweens to do a nice curve.
+        return -abs(self.compute_horizontal_delta(max, value) / 2)
