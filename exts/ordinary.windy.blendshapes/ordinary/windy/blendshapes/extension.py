@@ -52,12 +52,13 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
         skeleton.CreateJointNamesAttr().Set([])
 
         # Add a SkelAnimation referring to the blend shapes to simplify animation.
-        no_wind_anim = self.add_skel_animation(stage, skeleton, "noWindAnimation", [0, 0, 0, 0])
+        default_wind_anim = self.add_skel_animation(stage, skeleton, "defaultWindAnimation", [0, 0, 0, 0])
+        self.add_skel_animation(stage, skeleton, "noWindAnimation", [0, 0, 0, 0])
         self.add_skel_animation(stage, skeleton, "eastWindAnimation", [1, 0, 0, 0])
         self.add_skel_animation(stage, skeleton, "westWindAnimation", [0, 1, 0, 0])
         self.add_skel_animation(stage, skeleton, "southWindAnimation", [0, 0, 1, 0])
         self.add_skel_animation(stage, skeleton, "northWindAnimation", [0, 0, 0, 1])
-        no_wind_anim = UsdSkel.Animation = self.add_skel_animation(stage, skeleton, "testWindAnimation", {
+        self.add_skel_animation(stage, skeleton, "testWindAnimation", {
                     0: [0, 0, 0, 0],
                     10: [0.2, 0, 0.2, 0],
                     25: [1, 0, 1, 0],
@@ -71,7 +72,7 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
 
         # Point the skeleton to the no wind animation.
         skel_binding: UsdSkel.BindingAPI = UsdSkel.BindingAPI(skeleton)
-        skel_binding.CreateAnimationSourceRel().SetTargets([no_wind_anim.GetPath()])
+        skel_binding.CreateAnimationSourceRel().SetTargets([default_wind_anim.GetPath()])
 
     def add_skel_animation(self, stage: Usd.Stage, skeleton: UsdSkel.Skeleton, animation_name, weights):
         print(animation_name)
@@ -82,9 +83,12 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
         skel_animation.CreateRotationsAttr().Set([])
         skel_animation.CreateScalesAttr().Set([])
         skel_animation.CreateTranslationsAttr().Set([])
+        x: Usd.Prim = None
+        UsdSkel.Animation.GetBlendShapeWeightsAttr
 
         if type(weights) is dict:
             attr = skel_animation.CreateBlendShapeWeightsAttr()
+            skel_animation.GetBlendShapeWeightsAttr
             for time, value in weights.items():
                 attr.Set(time=time, value=value)
         else:
@@ -209,5 +213,6 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
     
     def compute_vertical_delta(self, max, value):
         # When leaning reduce the height a bit so it does not look like its stretching too much.
-        # TODO: Would have to do a few inbetweens to do a nice curve.
-        return -abs(self.compute_horizontal_delta(max, value) / 2)
+        # TODO: Would have to do a few inbetweens to do a nice curve, and it jumps badly at the top, so just skip it for now.
+        return 0
+        #return -abs(self.compute_horizontal_delta(max, value) / 2)
