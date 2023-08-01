@@ -120,14 +120,13 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
     def look_for_meshes(self, stage, prim, skeleton):
         if prim.IsA(UsdGeom.Mesh):
             self.add_blend_shapes_for_mesh(stage, prim, skeleton)
-        else:
-            for child_prim in prim.GetChildren():
-                self.look_for_meshes(stage, child_prim, skeleton)
+        for child_prim in prim.GetChildren():
+            self.look_for_meshes(stage, child_prim, skeleton)
 
-    def add_blend_shapes_for_mesh(self, stage: Usd.Stage, mesh: UsdGeom.Mesh, skeleton):
+    def add_blend_shapes_for_mesh(self, stage: Usd.Stage, meshPrim, skeleton):
         # Work out which way is up for the model.
         up = "Y"
-        units_resolve_attr = mesh.GetPrim().GetParent().GetAttribute("xformOp:rotateX:unitsResolve")
+        units_resolve_attr = meshPrim.GetParent().GetAttribute("xformOp:rotateX:unitsResolve")
         if units_resolve_attr:
             units_resolve = units_resolve_attr.Get()
             if units_resolve == 0:
@@ -138,6 +137,7 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
                 print("I don't know what up is!")
 
         # Create child blend shapes for +X (east) and +Z (south)
+        mesh = UsdGeom.Mesh(meshPrim)
         east_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "eastWindBlendShape", 1, 0)
         west_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "westWindBlendShape", -1, 0)
         south_blend_shape = self.add_blendshape_in_one_direction(stage, up, mesh, "southWindBlendShape", 0, 1)
@@ -146,23 +146,17 @@ class OrdinaryWindyBlendshapesExtension(omni.ext.IExt):
 
         # Add skel:blendShapes property to list the blendshape names.
         # https://openusd.org/dev/api/class_usd_skel_binding_a_p_i.html
-        binding: UsdSkel.BindingAPI = UsdSkel.BindingAPI(mesh)
+        binding: UsdSkel.BindingAPI = UsdSkel.BindingAPI(meshPrim)
         binding.CreateBlendShapesAttr().Set(["eastWindBlendShape", "westWindBlendShape", "southWindBlendShape", "northWindBlendShape"])
         binding.CreateBlendShapeTargetsRel().SetTargets([east_blend_shape.GetPath(), west_blend_shape.GetPath(), south_blend_shape.GetPath(), north_blend_shape.GetPath()])
-        UsdSkel.BindingAPI.Apply(mesh.GetPrim())
-
+        UsdSkel.BindingAPI.Apply(meshPrim)
         binding.CreateSkeletonRel().SetTargets([skeleton.GetPath()])
 
 
     def add_blendshape_in_one_direction(self, stage: Usd.Stage, up, mesh: UsdGeom.Mesh, blend_shape_name, east_scale, south_scale):
         # Work out how many points in blendshape we need.
         # We specify all points (0..n), normal offsets are all zero. Point offsets are the most complex.
-        #print(mesh.GetPath().pathString)
-        #print(mesh.GetPropertyNames())
-        #print(mesh.GetAttribute("points"))
-        #print(mesh.GetAttribute("points").Get())
-        #mesh_points = mesh.GetPointsAttr().Get()
-        mesh_points = mesh.GetAttribute("points").Get()
+        mesh_points = mesh.GetPointsAttr().Get()
         num_points = len(mesh_points)
         point_indices = range(0, num_points)
         normal_offsets = [(0, 0, 0) for i in point_indices]
